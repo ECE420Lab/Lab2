@@ -14,7 +14,7 @@ void *connectServer(void *args){
 	struct sockaddr_in sock_var;
 	int clientFileDescriptor=socket(AF_INET,SOCK_STREAM,0);
 	long rank = (long)args;
-	char buff[20];
+	char buff[100];
 	
 	sock_var.sin_addr.s_addr=inet_addr("127.0.0.1");
 	sock_var.sin_port=3000;
@@ -35,7 +35,14 @@ void *connectServer(void *args){
 		}
 		
 		//printf("The client buffer contains position %d, and operation %c \n",buff);
-		write(clientFileDescriptor,buff,20);
+		write(clientFileDescriptor,buff,100);
+
+		//handle server request result
+		char result[100];
+		//char msg[100];
+		read(clientFileDescriptor,result,100);
+		//sscanf(result, "%s", msg);
+		printf("%s\n",*result);
 		
 	}
 	else{
