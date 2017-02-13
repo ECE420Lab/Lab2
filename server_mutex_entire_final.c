@@ -7,27 +7,28 @@
 #include<unistd.h>
 #include<pthread.h>
 
-//gcc -std=gnu99  server_pthread_rwLock.c -o s -lpthread -Wall
+//gcc -std=gnu99  server_mutex_entire.c -o s -lpthread -Wall
 
 char** theArray;
-pthread_rwlock_t rwlock;
-int aSize=100;
+pthread_mutex_t mutex;
+int aSize = 100;
 int usr_port;
 
 void* ServerEcho(void *args);
 
 int main(int argc, char * argv []){
-   
-    pthread_rwlock_init(&rwlock,NULL);
-    
-    int n = atoi(argv[2]);
+    printf("creating mutex \n");
+    pthread_mutex_init(&mutex,NULL);
+
+
+	int n = atoi(argv[2]);
 	usr_port = atoi(argv[1]);
 
 	if( (n==10)||(n==100)||(n==1000)||(n==10000) ){ //default:100
 		aSize=n;	
 	}
 
-    theArray=malloc(aSize*sizeof(char*));  
+    theArray=malloc(aSize*sizeof(char*));  //hardcode array size for now
     for (int i=0; i<aSize;i++){
         theArray[i]=malloc(100*sizeof(char)); //use 100 for msg
         sprintf(theArray[i], "%s%d%s", "String ", i, ": the initial value" );
@@ -52,25 +53,27 @@ int main(int argc, char * argv []){
         while(1){
             for(int i=0;i<1000;i++){
                 clientFileDescriptor=accept(serverFileDescriptor,NULL,NULL);
-                printf("Connect to client %d \n",clientFileDescriptor);
+                printf("Connected to client %d \n",clientFileDescriptor);
                 pthread_create(&thread_handles[i],NULL,ServerEcho,(void*)clientFileDescriptor);
             }   
+
             for(int i = 0;i<1000;i++){
                 pthread_join(thread_handles[i],NULL);
             }
-	
+  		
+	        free(thread_handles);
+            	pthread_mutex_destroy(&mutex);
+
     		printf("All threads have joined. Checking Array \n");
     		for(int i=0;i<aSize;i++){
     			printf("%s\n",theArray[i]);		
     		}
 
-                pthread_rwlock_destroy(&rwlock);
-                free(thread_handles);
+            	for (int i=0; i<aSize;i++){
+                	free(theArray[i]);
+            	}   
+           	free(theArray);
 
-                for (int i=0; i<aSize;i++){
-                    free(theArray[i]);
-                }   
-                free(theArray);
         }//end of infinite while loop
 
     }
@@ -79,63 +82,57 @@ int main(int argc, char * argv []){
         return 1;
     }
 
-
     return 0;
 
 } //end of main
 
 void* ServerEcho(void* args){
     long clientFileDescriptor = (long) args;
-    char buff[100];
 
+    char buff[100];
     read(clientFileDescriptor,buff,100);
 
     int pos;
     char operation;
-   
     int CSerror;
-
+   
     sscanf(buff, "%d %c", &pos,&operation);
-    printf("Server recieved position %d and operation %c from %ld \n",pos,operation,clientFileDescriptor);
+    printf("   Server thread received position %d and operation %c from %ld \n",pos,operation,clientFileDescriptor);
 
-    if(operation=='r'){
+    if(operation=='r'){ //read operation
         char msg[100];
-        pthread_rwlock_rdlock(&rwlock);
+
+        pthread_mutex_lock(&mutex);
             CSerror=snprintf(msg,100, "%s", theArray[pos] );
-        pthread_rwlock_unlock(&rwlock);
+        pthread_mutex_unlock(&mutex);
 
         if(CSerror<0){
-            printf("ERROR: could not read from position %d\n",pos);
-            snprintf(msg,100, "%s %d","Error reading pos: ", pos );     
+            printf("ERROR: could not read from position: %d \n", pos);
+            sprintf(msg, "%s %d","Error writing to pos: ", pos );     
         }
 
         write(clientFileDescriptor,msg,100);
-    	close(clientFileDescriptor);
+        close(clientFileDescriptor);    
     }
-    else if(operation=='w'){
-
+    else if(operation=='w'){ //write operation
         char msg[100];
-        sprintf(msg, "%s%d%s","String ", pos, " has been modified by a write request" );
+        snprintf(msg,100, "%s%d%s","String ", pos, " has been modified by a write request \n" );
 
-        pthread_rwlock_wrlock(&rwlock);
-            CSerror=snprintf(theArray[pos],100, "%s",msg );
-        pthread_rwlock_unlock(&rwlock);
-    
+        pthread_mutex_lock(&mutex);
+            CSerror=snprintf(theArray[pos],100,"%s",msg);
+        pthread_mutex_unlock(&mutex);
+
         if(CSerror<0){
             printf("ERROR: could not write to array \n");
             sprintf(msg, "%s %d","Error writing to pos: ", pos );     
         }
 
-        
-        write(clientFileDescriptor,msg,100);     
-    	close(clientFileDescriptor);  
+        write(clientFileDescriptor,msg,100);
+        close(clientFileDescriptor);           
     }
     else{
-        printf("Error: could not communicate with client \n");
-        return(NULL);   
+        printf("ERROR: could not communicate with client %ld \n",clientFileDescriptor);  
     }
-   
-   
 
     return NULL;
 }
